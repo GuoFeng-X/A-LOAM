@@ -9,12 +9,17 @@
     <!-- <node pkg="aloam_velodyne" type="ascanRegistration" name="ascanRegistration" output="screen" /> -->
         
 
-    <node pkg="aloam_velodyne" type="alaserOdometry" name="alaserOdometry" output="screen" >
+    <node pkg="aloam_velodyne" type="alaserOdometry_wind" name="alaserOdometry" output="screen" >
         <!-- if 1, do mapping 10 Hz, if 2, do mapping 5 Hz. Suggest to use 1, it will adjust frequence automaticlly -->
         <param name="mapping_skip_frame" type="int" value="1" />
     </node>
 
-    <node pkg="aloam_velodyne" type="alaserMapping_wind" name="alaserMapping_wind" output="screen" >
+    <!-- <node pkg="aloam_velodyne" type="alaserOdometry" name="alaserOdometry" output="screen" > -->
+        <!-- if 1, do mapping 10 Hz, if 2, do mapping 5 Hz. Suggest to use 1, it will adjust frequence automaticlly -->
+        <!-- <param name="mapping_skip_frame" type="int" value="1" /> -->
+    <!-- </node> -->
+
+    <node pkg="aloam_velodyne" type="alaserMapping_wind" name="alaserMapping" output="screen" >
         <param name="lidar_corner_topic" type="string" value="/laser_cloud_corner_last" />
         <param name="lidar_surf_topic" type="string" value="/laser_cloud_surf_last" />
         <param name="pose_topic" type="string" value="/vins_estimator/odometry_wind" />

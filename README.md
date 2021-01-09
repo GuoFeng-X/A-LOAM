@@ -48,6 +48,16 @@ Download [KITTI Odometry dataset](http://www.cvlibs.net/datasets/kitti/eval_odom
     roslaunch aloam_velodyne aloam_velodyne_HDL_64.launch
     roslaunch aloam_velodyne kitti_helper.launch
 ```
+
+using VINS-Fusion to do odometry, publish laserMapping to get laser pose and mapping 
+```
+    roslaunch vins kitti_stereo.launch
+    roslaunch aloam_velodyne aloam_lodyne_HDL_64_wind.launch
+    rosbag play kitti_odometry_sequence_00.bag
+```
+
+
+
 <img src="https://github.com/HKUST-Aerial-Robotics/A-LOAM/blob/devel/picture/kitti_gif.gif" width = 720 height = 351 />
 
 ## 5. Docker Support

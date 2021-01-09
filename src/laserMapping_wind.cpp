@@ -57,11 +57,15 @@
 #include <thread>
 #include <iostream>
 #include <string>
+#include <fstream>
+
 
 #include "lidarFactor.hpp"
 #include "aloam_velodyne/common.h"
 #include "aloam_velodyne/tic_toc.h"
-#include <fstream>
+// standalone lib h
+#include "poseloammsg.hpp"
+
 
 using namespace std;
 
@@ -140,6 +144,80 @@ ros::Publisher pubLaserCloudSurround, pubLaserCloudMap, pubLaserCloudFullRes, pu
 
 nav_msgs::Path laserAfterMappedPath;
 
+
+
+PoseLoamMsg::PoseLoamMsg(ros::NodeHandle& nh): nh_(nh)
+{
+
+    if(!nh_.getParam("pose_topic", pose_topic_))
+        ROS_ERROR("failed to read pose topic.");
+    if(!nh_.getParam("lidar_topic", lidar_topic_))
+        ROS_ERROR("failed to read lidar topic.");
+	if(!nh_.getParam("lidar_corner_topic", lidar_corner_topic_))
+        ROS_ERROR("failed to read lidar_corner_topic_.");
+    if(!nh_.getParam("lidar_surf_topic", lidar_surf_topic_))
+        ROS_ERROR("failed to read lidar_surf_topic_.");
+
+    lidar_sub_.subscribe(nh_, lidar_topic_, 10);
+    pose_sub_.subscribe(nh_, pose_topic_, 10);
+
+	lidar_corner_sub_.subscribe(nh_, lidar_corner_topic_, 10);
+    lidar_surf_sub_.subscribe(nh_, lidar_surf_topic_, 10);
+
+	std::cout<<"pose_topic:  "<< pose_topic_<<std::endl;
+	std::cout<<"lidar_topic:  "<< lidar_topic_<<std::endl;
+	std::cout<<"lidar_corner_topic:  "<< lidar_corner_topic_<<std::endl;
+	std::cout<<"lidar_surf_topic:  "<< lidar_surf_topic_<<std::endl;
+
+    sync.reset(new Sync(lidar_odom_fuse_policy(10), lidar_sub_, lidar_corner_sub_, lidar_surf_sub_, pose_sub_));
+    sync->registerCallback(boost::bind(&PoseLoamMsg::callback, this, _1, _2, _3, _4));
+
+}
+
+
+void PoseLoamMsg::callback(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg, 
+	const sensor_msgs::PointCloud2ConstPtr& laserCloudMsgCorner, 
+	const sensor_msgs::PointCloud2ConstPtr& laserCloudMsgSurf, 
+	const nav_msgs::Odometry::ConstPtr &laserOdometry
+	)
+{
+	mBuf.lock();
+	fullResBuf.push(laserCloudMsg);
+	cornerLastBuf.push(laserCloudMsgCorner);
+	surfLastBuf.push(laserCloudMsgSurf);
+	odometryBuf.push(laserOdometry);
+	mBuf.unlock();
+
+
+	// high frequence publish
+	Eigen::Quaterniond q_wodom_curr;
+	Eigen::Vector3d t_wodom_curr;
+	q_wodom_curr.x() = laserOdometry->pose.pose.orientation.x;
+	q_wodom_curr.y() = laserOdometry->pose.pose.orientation.y;
+	q_wodom_curr.z() = laserOdometry->pose.pose.orientation.z;
+	q_wodom_curr.w() = laserOdometry->pose.pose.orientation.w;
+	t_wodom_curr.x() = laserOdometry->pose.pose.position.x;
+	t_wodom_curr.y() = laserOdometry->pose.pose.position.y;
+	t_wodom_curr.z() = laserOdometry->pose.pose.position.z;
+
+	Eigen::Quaterniond q_w_curr = q_wmap_wodom * q_wodom_curr;
+	Eigen::Vector3d t_w_curr = q_wmap_wodom * t_wodom_curr + t_wmap_wodom; 
+
+	nav_msgs::Odometry odomAftMapped;
+	odomAftMapped.header.frame_id = "/camera_init";
+	odomAftMapped.child_frame_id = "/aft_mapped";
+	odomAftMapped.header.stamp = laserOdometry->header.stamp;
+	odomAftMapped.pose.pose.orientation.x = q_w_curr.x();
+	odomAftMapped.pose.pose.orientation.y = q_w_curr.y();
+	odomAftMapped.pose.pose.orientation.z = q_w_curr.z();
+	odomAftMapped.pose.pose.orientation.w = q_w_curr.w();
+	odomAftMapped.pose.pose.position.x = t_w_curr.x();
+	odomAftMapped.pose.pose.position.y = t_w_curr.y();
+	odomAftMapped.pose.pose.position.z = t_w_curr.z();
+	pubOdomAftMappedHighFrec.publish(odomAftMapped);
+}
+
+
 // set initial guess
 void transformAssociateToMap()
 {
@@ -174,61 +252,7 @@ void pointAssociateTobeMapped(PointType const *const pi, PointType *const po)
 	po->intensity = pi->intensity;
 }
 
-void laserCloudCornerLastHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudCornerLast2)
-{
-	mBuf.lock();
-	cornerLastBuf.push(laserCloudCornerLast2);
-	mBuf.unlock();
-}
 
-void laserCloudSurfLastHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudSurfLast2)
-{
-	mBuf.lock();
-	surfLastBuf.push(laserCloudSurfLast2);
-	mBuf.unlock();
-}
-
-void laserCloudFullResHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudFullRes2)
-{
-	mBuf.lock();
-	fullResBuf.push(laserCloudFullRes2);
-	mBuf.unlock();
-}
-
-//receive odomtry
-void laserOdometryHandler(const nav_msgs::Odometry::ConstPtr &laserOdometry)
-{
-	mBuf.lock();
-	odometryBuf.push(laserOdometry);
-	mBuf.unlock();
-
-	// high frequence publish 
-	Eigen::Quaterniond q_wodom_curr;
-	Eigen::Vector3d t_wodom_curr;
-	q_wodom_curr.x() = laserOdometry->pose.pose.orientation.x;
-	q_wodom_curr.y() = laserOdometry->pose.pose.orientation.y;
-	q_wodom_curr.z() = laserOdometry->pose.pose.orientation.z;
-	q_wodom_curr.w() = laserOdometry->pose.pose.orientation.w;
-	t_wodom_curr.x() = laserOdometry->pose.pose.position.x;
-	t_wodom_curr.y() = laserOdometry->pose.pose.position.y;
-	t_wodom_curr.z() = laserOdometry->pose.pose.position.z;
-
-	Eigen::Quaterniond q_w_curr = q_wmap_wodom * q_wodom_curr;
-	Eigen::Vector3d t_w_curr = q_wmap_wodom * t_wodom_curr + t_wmap_wodom; 
-
-	nav_msgs::Odometry odomAftMapped;
-	odomAftMapped.header.frame_id = "/camera_init";
-	odomAftMapped.child_frame_id = "/aft_mapped";
-	odomAftMapped.header.stamp = laserOdometry->header.stamp;
-	odomAftMapped.pose.pose.orientation.x = q_w_curr.x();
-	odomAftMapped.pose.pose.orientation.y = q_w_curr.y();
-	odomAftMapped.pose.pose.orientation.z = q_w_curr.z();
-	odomAftMapped.pose.pose.orientation.w = q_w_curr.w();
-	odomAftMapped.pose.pose.position.x = t_w_curr.x();
-	odomAftMapped.pose.pose.position.y = t_w_curr.y();
-	odomAftMapped.pose.pose.position.z = t_w_curr.z();
-	pubOdomAftMappedHighFrec.publish(odomAftMapped);
-}
 
 void process()
 {
@@ -869,8 +893,9 @@ void process()
 
 			// Eigen::Matrix3d R_w_curr = q_w_curr.matrix();
 
+
 			// // write result to file
-			// ofstream foutC("/home/lenovo/桌面/wind.txt", ios::app);
+			// ofstream foutC("/home/lenovo/桌面/wind1.txt", ios::app);
 			// foutC.setf(ios::fixed, ios::floatfield);
 			// foutC.precision(5);
 			// foutC << R_w_curr(0,0) << " "<< R_w_curr(0,1) << " "<< R_w_curr(0,2) << " "<< t_w_curr.x() << " "
@@ -879,10 +904,10 @@ void process()
 			// foutC.close();
 
 			// write result to file
-			ofstream foutC("/home/lenovo/桌面/wind.txt", ios::app);
+			ofstream foutC("/home/lenovo/桌面/wind1.txt", ios::app);
 			foutC.setf(ios::fixed, ios::floatfield);
 			foutC.precision(9);
-			foutC << odomAftMapped.header.stamp.toSec()-1592458816.034174919 << " ";
+			foutC << odomAftMapped.header.stamp.toSec()-1592458800.189013957 << " ";
 			foutC.precision(5);
 			foutC << t_w_curr.x() << " "
 				<< t_w_curr.y() << " "
@@ -892,7 +917,6 @@ void process()
 				<< q_w_curr.z() << " "
 				<< q_w_curr.w() << endl;
 			foutC.close();
-
 
 			geometry_msgs::PoseStamped laserAfterMappedPose;
 			laserAfterMappedPose.header = odomAftMapped.header;
@@ -925,23 +949,20 @@ void process()
 int main(int argc, char **argv)
 {
 	ros::init(argc, argv, "laserMapping");
-	ros::NodeHandle nh;
+	ros::NodeHandle nh("~");
+
+	PoseLoamMsg posemsg(nh);
 
 	float lineRes = 0;
 	float planeRes = 0;
-	nh.param<float>("mapping_line_resolution", lineRes, 0.4);
-	nh.param<float>("mapping_plane_resolution", planeRes, 0.8);
+	nh.param<float>("mapping_line_resolution", lineRes, 0.5);
+	nh.param<float>("mapping_plane_resolution", planeRes, 0.9);
 	printf("line resolution %f plane resolution %f \n", lineRes, planeRes);
+
 	downSizeFilterCorner.setLeafSize(lineRes, lineRes,lineRes);
 	downSizeFilterSurf.setLeafSize(planeRes, planeRes, planeRes);
 
-	ros::Subscriber subLaserCloudCornerLast = nh.subscribe<sensor_msgs::PointCloud2>("/laser_cloud_corner_last", 100, laserCloudCornerLastHandler);
-
-	ros::Subscriber subLaserCloudSurfLast = nh.subscribe<sensor_msgs::PointCloud2>("/laser_cloud_surf_last", 100, laserCloudSurfLastHandler);
-
-	ros::Subscriber subLaserOdometry = nh.subscribe<nav_msgs::Odometry>("/laser_odom_to_init", 100, laserOdometryHandler);
-
-	ros::Subscriber subLaserCloudFullRes = nh.subscribe<sensor_msgs::PointCloud2>("/velodyne_cloud_3", 100, laserCloudFullResHandler);
+	/*****************************************************************************************************************/
 
 	pubLaserCloudSurround = nh.advertise<sensor_msgs::PointCloud2>("/laser_cloud_surround", 100);
 
@@ -960,6 +981,8 @@ int main(int argc, char **argv)
 		laserCloudCornerArray[i].reset(new pcl::PointCloud<PointType>());
 		laserCloudSurfArray[i].reset(new pcl::PointCloud<PointType>());
 	}
+
+	
 
 	std::thread mapping_process{process};
 

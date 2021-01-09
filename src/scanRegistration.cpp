@@ -79,6 +79,7 @@ ros::Publisher pubRemovePoints;
 std::vector<ros::Publisher> pubEachScan;
 
 bool PUB_EACH_LINE = false;
+// bool PUB_EACH_LINE = true;
 
 double MINIMUM_RANGE = 0.1; 
 
@@ -189,6 +190,8 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg)
         else if (N_SCANS == 32)
         {
             scanID = int((angle + 92.0/3.0) * 3.0 / 4.0);
+            // scanID = int((angle + 25.0) * 31.0 / 40.0);
+
             if (scanID > (N_SCANS - 1) || scanID < 0)
             {
                 count--;
@@ -495,7 +498,8 @@ int main(int argc, char **argv)
     ros::NodeHandle nh("~");  // 定义节点句柄,方便节点间的话题订阅和master的管理
 
     // 从句柄中获取设置的参数
-    nh.param<int>("scan_line", N_SCANS, 16);
+    nh.param<int>("scan_line", N_SCANS, 32);
+    // nh.getParam("scan_line", N_SCANS);
 
     nh.param<double>("minimum_range", MINIMUM_RANGE, 0.1);
 

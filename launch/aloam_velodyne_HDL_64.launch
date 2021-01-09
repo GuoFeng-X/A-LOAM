@@ -1,6 +1,6 @@
 <launch>
     
-    <param name="scan_line" type="int" value="64" />
+    
 
     <!-- if 1, do mapping 10 Hz, if 2, do mapping 5 Hz. Suggest to use 1, it will adjust frequence automaticlly -->
     <param name="mapping_skip_frame" type="int" value="1" />
@@ -14,6 +14,7 @@
 
     <node pkg="aloam_velodyne" type="ascanRegistration" name="ascanRegistration" output="screen">
         <param name="lidar_topic" type="string" value="/kitti/velo/pointcloud" />
+        <param name="scan_line" type="int" value="64" />
     </node>
     <!-- <node pkg="aloam_velodyne" type="ascanRegistration" name="ascanRegistration" output="screen" /> -->
         

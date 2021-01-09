@@ -205,7 +205,7 @@ void laserCloudFullResHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloud
 int main(int argc, char **argv)
 {
     ros::init(argc, argv, "laserOdometry");
-    ros::NodeHandle nh;
+    ros::NodeHandle nh("~");
 
     nh.param<int>("mapping_skip_frame", skipFrameNum, 2);  // 每次跳多少帧，默认是跳2帧，实际上是不跳帧，即10Hz
 
